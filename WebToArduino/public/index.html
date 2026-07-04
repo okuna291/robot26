@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Serial Write</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      min-height: 100vh; margin: 0; gap: 1rem;
+      background: #16181f; color: #e6e8ec;
+    }
+    input {
+      font-size: 1.5rem; padding: 0.5rem 1rem; width: 220px;
+      text-align: center; border-radius: 8px;
+      border: 1px solid #333; background: #0e0f13; color: #e6e8ec;
+    }
+    button {
+      font-size: 1rem; padding: 0.6rem 1.5rem; border-radius: 8px;
+      border: none; background: #4fd1c5; color: #0e0f13;
+      cursor: pointer; font-weight: 600;
+    }
+    #status { font-size: 0.85rem; color: #7a8090; height: 1.2em; }
+  </style>
+</head>
+<body>
+  <h2>Write to Serial</h2>
+  <input id="box" placeholder="type H, L, ..." autofocus />
+  <button id="send">Send</button>
+  <div id="status"></div>
+
+  <script>
+    const box = document.getElementById('box');
+    const status = document.getElementById('status');
+
+    async function send() {
+      const text = box.value;
+      if (!text) return;
+      try {
+        const res = await fetch('/write', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        const data = await res.json();
+        status.textContent = data.ok
+          ? 'sent: ' + JSON.stringify(text)
+          : 'error: ' + data.error;
+      } catch (err) {
+        status.textContent = 'error: ' + err.message;
+      }
+      box.value = '';
+      box.focus();
+    }
+
+    document.getElementById('send').addEventListener('click', send);
+    box.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+  </script>
+</body>
+</html>
+

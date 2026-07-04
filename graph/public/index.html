@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arduino A0 — Live</title>
+  <style>
+    :root {
+      --bg: #0e0f13;
+      --panel: #16181f;
+      --line: #4fd1c5;
+      --grid: #262932;
+      --text: #e6e8ec;
+      --muted: #7a8090;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      padding: 2rem;
+    }
+    h1 {
+      font-weight: 500;
+      font-size: 0.85rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0;
+    }
+    .value {
+      font-size: clamp(4rem, 18vw, 9rem);
+      font-weight: 600;
+      line-height: 1;
+      color: var(--line);
+      font-variant-numeric: tabular-nums;
+    }
+    .status {
+      font-size: 0.8rem;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #e05252;
+      transition: background 0.3s;
+    }
+    .dot.live { background: var(--line); }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--grid);
+      border-radius: 12px;
+      padding: 1rem;
+      width: min(720px, 92vw);
+    }
+    canvas { width: 100%; height: 220px; display: block; }
+    .meta {
+      display: flex; justify-content: space-between;
+      font-size: 0.75rem; color: var(--muted);
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Arduino · Analog A0</h1>
+  <div class="value" id="value">—</div>
+  <div class="status">
+    <span class="dot" id="dot"></span>
+    <span id="statusText">connecting…</span>
+  </div>
+
+  <div class="panel">
+    <canvas id="chart"></canvas>
+    <div class="meta">
+      <span>range 0–1023</span>
+      <span id="rate">0 Hz</span>
+    </div>
+  </div>
+
+  <script>
+    const valueEl = document.getElementById('value');
+    const dotEl = document.getElementById('dot');
+    const statusEl = document.getElementById('statusText');
+    const rateEl = document.getElementById('rate');
+    const canvas = document.getElementById('chart');
+    const ctx = canvas.getContext('2d');
+
+    const MAX_POINTS = 300;   // rolling window
+    const MAX_VAL = 1023;     // 10-bit ADC
+    const data = [];
+    let sampleCount = 0;
+
+    // --- Rolling chart -------------------------------------------------------
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = canvas.clientWidth * dpr;
+      canvas.height = canvas.clientHeight * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    function draw() {
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      ctx.clearRect(0, 0, w, h);
+
+      // grid lines
+      ctx.strokeStyle = '#262932';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i++) {
+        const y = (h / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      if (data.length > 1) {
+        ctx.strokeStyle = '#4fd1c5';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        data.forEach((v, i) => {
+          const x = (i / (MAX_POINTS - 1)) * w;
+          const y = h - (v / MAX_VAL) * h;
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
+      requestAnimationFrame(draw);
+    }
+    draw();
+
+    // --- Sample rate readout -------------------------------------------------
+    setInterval(() => {
+      rateEl.textContent = sampleCount + ' Hz';
+      sampleCount = 0;
+    }, 1000);
+
+    // --- Server-Sent Events --------------------------------------------------
+    const es = new EventSource('/stream');
+
+    es.onopen = () => {
+      dotEl.classList.add('live');
+      statusEl.textContent = 'live';
+    };
+
+    es.onmessage = (e) => {
+      const { value } = JSON.parse(e.data);
+      valueEl.textContent = value;
+      sampleCount++;
+      data.push(value);
+      if (data.length > MAX_POINTS) data.shift();
+    };
+
+    es.onerror = () => {
+      dotEl.classList.remove('live');
+      statusEl.textContent = 'disconnected — retrying…';
+    };
+  </script>
+</body>
+</html>
+
