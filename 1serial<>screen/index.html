@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Serial Value</title>
+  <style>
+    /* Simple styling so the page is easy to read */
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      margin-top: 50px;
+    }
+    .value {
+      font-size: 64px;
+      margin: 20px;
+    }
+    #swatch {
+      width: 200px;
+      height: 200px;
+      margin: 20px auto;
+      border: 2px solid #333;
+    }
+  </style>
+</head>
+<body>
+  <h1>Value from the Serial Port</h1>
+
+  <!-- This <span> starts empty and gets filled in with the number -->
+  <div class="value"><span id="v0">-</span></div>
+
+  <!-- A box whose brightness follows the value (0 = black, 255 = white) -->
+  <div id="swatch"></div>
+
+  <!-- 1) Load the Socket.IO library (the server provides this file automatically) -->
+  <script src="/socket.io/socket.io.js"></script>
+
+  <script>
+    // 2) Connect to the server that sent us this page
+    const socket = io();
+
+    // 3) When the server sends a "serialData" message, update the page
+    socket.on('serialData', (value) => {
+      // "value" is a single number like 123
+
+      // Show the number on the page
+      document.getElementById('v0').textContent = value;
+
+      // Use the value as a shade of gray (same number for red, green, blue)
+      document.getElementById('swatch').style.backgroundColor =
+        'rgb(' + value + ',' + value + ',' + value + ')';
+    });
+  </script>
+</body>
+</html>

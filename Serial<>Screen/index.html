@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Serial Values</title>
+  <style>
+    /* Simple styling so the page is easy to read */
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      margin-top: 50px;
+    }
+    .value {
+      font-size: 48px;
+      margin: 10px;
+    }
+    #swatch {
+      width: 200px;
+      height: 200px;
+      margin: 20px auto;
+      border: 2px solid #333;
+    }
+  </style>
+</head>
+<body>
+  <h1>Values from the Serial Port</h1>
+
+  <!-- These <span> tags start empty and get filled in with the numbers -->
+  <div class="value">A: <span id="v0">-</span></div>
+  <div class="value">B: <span id="v1">-</span></div>
+  <div class="value">C: <span id="v2">-</span></div>
+
+  <!-- A colored box that treats the 3 values as Red, Green, Blue -->
+  <div id="swatch"></div>
+
+  <!-- 1) Load the Socket.IO library (the server provides this file automatically) -->
+  <script src="/socket.io/socket.io.js"></script>
+
+  <script>
+    // 2) Connect to the server that sent us this page
+    const socket = io();
+
+    // 3) When the server sends a "serialData" message, update the page
+    socket.on('serialData', (values) => {
+      // "values" is an array like [123, 45, 200]
+
+      // Put each number into its <span>
+      document.getElementById('v0').textContent = values[0];
+      document.getElementById('v1').textContent = values[1];
+      document.getElementById('v2').textContent = values[2];
+
+      // Use the 3 numbers as an RGB color for the box
+      document.getElementById('swatch').style.backgroundColor =
+        'rgb(' + values[0] + ',' + values[1] + ',' + values[2] + ')';
+    });
+  </script>
+</body>
+</html>

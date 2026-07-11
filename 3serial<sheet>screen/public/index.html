@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Serial to Google Sheet (RGB)</title>
+  <style>
+    /* The BODY background will be set by the values read from the sheet */
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      margin: 0;
+      padding-top: 40px;
+      min-height: 100vh;
+      transition: background-color 0.5s;   /* smooth color change */
+    }
+    /* A white card keeps the text readable no matter what the background color is */
+    .card {
+      display: inline-block;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 20px 40px;
+      border-radius: 12px;
+    }
+    .row { margin: 12px; font-size: 20px; }
+    input[type="text"] { font-size: 18px; padding: 5px; }
+    .value { font-size: 32px; margin: 8px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Serial Values to Google Sheet</h1>
+
+    <!-- The tab we WRITE our three values to. New IDs make new tabs. -->
+    <div class="row">
+      Write ID: <input type="text" id="writeId" placeholder="e.g. student1" />
+    </div>
+
+    <!-- The tab we READ from (to color the page + light the LEDs). Can be different! -->
+    <div class="row">
+      Read ID: <input type="text" id="readId" placeholder="e.g. student2" />
+    </div>
+
+    <!-- When checked, send our three values every 5 seconds -->
+    <div class="row">
+      <label>
+        <input type="checkbox" id="sendToggle" /> Send my values every 5 seconds
+      </label>
+    </div>
+
+    <!-- The three values from our own sensors -->
+    <div class="value">My sensors: <span id="localValue">-</span></div>
+
+    <!-- The three values read back from the Read ID tab -->
+    <div class="value">In sheet: <span id="sheetValue">-</span></div>
+  </div>
+
+  <!-- Load Socket.IO (served automatically by the server) -->
+  <script src="/socket.io/socket.io.js"></script>
+
+  <script>
+    // ============================================================
+    // SETTINGS: paste your Apps Script Web App URL (the /exec link)
+    // ============================================================
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwiu-pxXspffH-AMHAQcAM8hl5Z-tN94Ye267BoUMwY7GfKkjxhp1KVuvWk_HkxdBfPcg/exec";
+
+    // ============================================================
+    // 1) Get the three serial values from our Node server
+    // ============================================================
+    const socket = io();
+    let latestValues = [0, 0, 0];   // newest [r, g, b] from the serial port
+
+    socket.on('serialData', (values) => {
+      latestValues = values;                                    // save for sending
+      document.getElementById('localValue').textContent = values.join(', ');
+    });
+
+    // ============================================================
+    // 2) WRITE: send our three values to the Write ID tab (POST)
+    //    We join them with tabs ("\t") because that is how the
+    //    Apps Script splits a row into separate columns.
+    // ============================================================
+    function sendToSheet(tab, values) {
+      fetch(WEB_APP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        body: JSON.stringify({
+          tab: tab,
+          data: values.join('\t')       // "123\t45\t200"  -> columns A, B, C
+        })
+      });
+    }
+
+    // ============================================================
+    // 3) READ: get the three values from the Read ID tab (JSONP)
+    // ============================================================
+    let callbackCounter = 0;
+
+    function readFromSheet(tab) {
+      callbackCounter++;
+      const callbackName = 'sheetCallback' + callbackCounter;
+
+      window[callbackName] = function (content) {
+        // "content" looks like "123\t45\t200". Take the first row, split on tabs.
+        const firstLine = String(content).trim().split('\n')[0];
+        const parts = firstLine.split('\t');
+
+        if (parts.length === 3) {
+          const rgb = parts.map(function (p) { return parseInt(p, 10); });
+
+          // Only use it if all three are real numbers
+          if (rgb.every(function (n) { return !isNaN(n); })) {
+            document.getElementById('sheetValue').textContent = rgb.join(', ');
+
+            // Color the whole page background with the three values (as R, G, B)
+            document.body.style.backgroundColor =
+              'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
+
+            // Send the three values back to Node -> serial -> Arduino LEDs
+            socket.emit('sheetValue', rgb);
+          }
+        }
+
+        // Clean up the temporary <script> tag and function
+        document.body.removeChild(script);
+        delete window[callbackName];
+      };
+
+      const script = document.createElement('script');
+      script.src = WEB_APP_URL + '?tab=' + encodeURIComponent(tab) +
+                   '&callback=' + callbackName;
+      document.body.appendChild(script);
+    }
+
+    // ============================================================
+    // 4) Every 5 seconds: maybe send (Write ID), and read (Read ID)
+    // ============================================================
+    setInterval(function () {
+      const writeTab = document.getElementById('writeId').value.trim();
+      const readTab  = document.getElementById('readId').value.trim();
+
+      if (document.getElementById('sendToggle').checked && writeTab !== "") {
+        sendToSheet(writeTab, latestValues);
+      }
+
+      if (readTab !== "") {
+        readFromSheet(readTab);
+      }
+    }, 250);
+  </script>
+</body>
+</html>

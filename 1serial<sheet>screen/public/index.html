@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Serial to Google Sheet</title>
+  <style>
+    /* Simple styling so the page is easy to read */
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      margin-top: 40px;
+    }
+    .row { margin: 15px; font-size: 20px; }
+    input[type="text"] { font-size: 18px; padding: 5px; }
+    .value { font-size: 40px; margin: 10px; }
+    #swatch {
+      width: 200px;
+      height: 200px;
+      margin: 20px auto;
+      border: 2px solid #333;
+    }
+  </style>
+</head>
+<body>
+  <h1>Serial Value to Google Sheet</h1>
+
+  <!-- Text field: the tab we WRITE our value to. New IDs make new tabs. -->
+  <div class="row">
+    Write ID: <input type="text" id="writeId" placeholder="e.g. student1" />
+  </div>
+
+  <!-- Text field: the tab we READ from to color the swatch. Can be different! -->
+  <div class="row">
+    Read ID: <input type="text" id="readId" placeholder="e.g. student2" />
+  </div>
+
+  <!-- Checkbox: when checked we send data every 5 seconds, when unchecked we stop. -->
+  <div class="row">
+    <label>
+      <input type="checkbox" id="sendToggle" /> Send my value every 5 seconds
+    </label>
+  </div>
+
+  <!-- The most recent value read from our own serial port -->
+  <div class="value">My sensor: <span id="localValue">-</span></div>
+
+  <!-- The value we read back from the Read ID tab -->
+  <div class="value">In sheet: <span id="sheetValue">-</span></div>
+
+  <!-- A box colored by the value read from the Read ID tab (0 = black, 255 = white) -->
+  <div id="swatch"></div>
+
+  <!-- 1) Load the Socket.IO library (the server provides this file automatically) -->
+  <script src="/socket.io/socket.io.js"></script>
+
+  <script>
+    // ============================================================
+    // SETTINGS
+    // ============================================================
+    // Paste your Google Apps Script Web App URL here (the "/exec" link
+    // you get after deploying the script as a Web App).
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwiu-pxXspffH-AMHAQcAM8hl5Z-tN94Ye267BoUMwY7GfKkjxhp1KVuvWk_HkxdBfPcg/exec";
+
+    // ============================================================
+    // 2) Get the serial value from our own Node server
+    // ============================================================
+    const socket = io();
+    let latestValue = 0;   // remembers the newest value from the serial port
+
+    socket.on('serialData', (value) => {
+      latestValue = value;                                   // save it for later
+      document.getElementById('localValue').textContent = value;  // show it on the page
+    });
+
+    // ============================================================
+    // 3) WRITE: send our value to the Write ID tab (a POST request)
+    // ============================================================
+    function sendToSheet(tab, value) {
+      fetch(WEB_APP_URL, {
+        method: 'POST',
+        mode: 'no-cors',                       // Apps Script needs this for POST from a browser
+        body: JSON.stringify({
+          tab: tab,                            // which tab to write to (creates it if new)
+          data: String(value)                 // the value, written into cell A1
+        })
+      });
+    }
+
+    // ============================================================
+    // 4) READ: get the value from the Read ID tab (JSONP)
+    // ============================================================
+    // The browser cannot normally read from Apps Script because of CORS,
+    // so we use the classic "JSONP" trick: we add a <script> tag whose URL
+    // asks Apps Script to call one of our functions with the data.
+    let callbackCounter = 0;
+
+    function readFromSheet(tab) {
+      callbackCounter++;
+      const callbackName = 'sheetCallback' + callbackCounter;  // a unique function name
+
+      // Define the function that Apps Script will call with the data
+      window[callbackName] = function (content) {
+        // "content" is the tab's data as text. We wrote a single number, so:
+        const value = parseInt(String(content).trim(), 10);
+
+        // Ignore errors (e.g. "ERROR: Sheet not found" before the tab exists)
+        if (!isNaN(value)) {
+          document.getElementById('sheetValue').textContent = value;
+          // Use the value as a shade of gray for the swatch
+          document.getElementById('swatch').style.backgroundColor =
+            'rgb(' + value + ',' + value + ',' + value + ')';
+
+          // Send this value back to our Node server, which writes it to
+          // the serial port so the Arduino can use it (to light pin 13).
+          socket.emit('sheetValue', value);
+        }
+
+        // Clean up the temporary <script> tag and function
+        document.body.removeChild(script);
+        delete window[callbackName];
+      };
+
+      // Build the request URL and add the <script> tag to trigger it
+      const script = document.createElement('script');
+      script.src = WEB_APP_URL + '?tab=' + encodeURIComponent(tab) +
+                   '&callback=' + callbackName;
+      document.body.appendChild(script);
+    }
+
+    // ============================================================
+    // 5) Every 5 seconds: maybe send (to Write ID), and read (from Read ID)
+    // ============================================================
+    setInterval(function () {
+      const writeTab = document.getElementById('writeId').value.trim();
+      const readTab  = document.getElementById('readId').value.trim();
+
+      // Only send if the checkbox is checked AND a Write ID was typed
+      if (document.getElementById('sendToggle').checked && writeTab !== "") {
+        sendToSheet(writeTab, latestValue);
+      }
+
+      // Read from the Read ID tab (if one was typed) to color the swatch
+      if (readTab !== "") {
+        readFromSheet(readTab);
+      }
+    }, 1000);   // 5000 milliseconds = 5 seconds
+  </script>
+</body>
+</html>
